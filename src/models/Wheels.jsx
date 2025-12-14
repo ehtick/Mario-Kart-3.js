@@ -13,6 +13,7 @@ import { Sparks } from "../particles/sparks/Sparks";
 import { Glow } from "../particles/drift/glow/Glow";
 import { Skate } from "../particles/drift/Skate/Skate";
 import { Trails } from "../particles/sparks/Trails";
+import { KartDust } from "./KartDust";
 import { getDriftLevel } from "../constants";
 import { useGameStore } from "../store";
 
@@ -44,6 +45,14 @@ export function Wheels({ speed, inputTurn, driftDirection, driftPower, jumpOffse
   const rightParticles = useRef(null);
 
   const isDriftingRef = useRef(false);
+
+  // Dust states for each wheel
+  const dustWheelStates = useRef([
+    { position: new Vector3(), shouldEmit: false },
+    { position: new Vector3(), shouldEmit: false },
+    { position: new Vector3(), shouldEmit: false },
+    { position: new Vector3(), shouldEmit: false },
+  ]);
 
   const setBoostPower = useGameStore((state) => state.setBoostPower);
   const setDriftLevel = useGameStore((state) => state.setDriftLevel);
@@ -79,11 +88,27 @@ export function Wheels({ speed, inputTurn, driftDirection, driftPower, jumpOffse
       24,
       delta
     );
+
+    // Check if on dirt for dust effects
+    wheel.current.isOnDirt = hit.object.name.includes("dirt") &&
+      speed.current > 5 &&
+      jumpOffset.current === 0;
+
+    // Also emit dust during drift on back wheels (index 0 and 1)
+    if ((wheelIndex === 0 || wheelIndex === 1) && driftPower.current > 0.01 && jumpOffset.current === 0 && offset < 0.05) {
+      wheel.current.isOnDirt = true;
+    }
   }
 
   function getWheelPositions() {
-    const wheelPositions = [wheel0, wheel1, wheel2, wheel3].map((wheel) => {
+    const wheelPositions = [wheel0, wheel1, wheel2, wheel3].map((wheel, index) => {
       const position = wheel.current.getWorldPosition(new Vector3());
+      const localPos = wheel.current.position;
+
+      // Update dust states - copy position so it tracks wheel height
+      dustWheelStates.current[index].position.copy(localPos);
+      dustWheelStates.current[index].shouldEmit = wheel.current.isOnDirt || false;
+
       return position;
     });
     return wheelPositions;
@@ -212,6 +237,9 @@ export function Wheels({ speed, inputTurn, driftDirection, driftPower, jumpOffse
 
   return (
     <group dispose={null}>
+      {/* Wheel dust effects */}
+      <KartDust wheelStates={dustWheelStates.current} />
+
       {/* Back wheels */}
       <mesh
         name="wheel"
