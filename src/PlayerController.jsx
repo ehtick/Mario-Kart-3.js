@@ -1,5 +1,5 @@
 import { Kart } from "./models/Kart";
-import { useKeyboardControls } from "@react-three/drei";
+import { useKeyboardControls, OrbitControls } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import { Vector3 } from "three";
@@ -9,6 +9,7 @@ import { useGameStore } from "./store";
 import gsap from "gsap";
 import { useTouchScreen } from "./hooks/useTouchScreen";
 import VFXEmitter from "./wawa-vfx/VFXEmitter";
+import { Model } from "./models/Witch";
 
 export const PlayerController = () => {
   const rbRef = useRef(null);
@@ -70,8 +71,8 @@ export const PlayerController = () => {
           if (driftDirection.current !== 0) {
             gsap.killTweensOf(backWheelOffset.current);
             gsap.to(backWheelOffset.current, {
-              left: driftDirection.current === driftDirections.left ? 0.4 : 0,
-              right: driftDirection.current === driftDirections.right ? 0.4 : 0,
+              left: driftDirection.current === driftDirections.left ? 0.2 : 0,
+              right: driftDirection.current === driftDirections.right ? 0.2 : 0,
               duration: 0.3,
               ease: "power4.out",
               onComplete: () => {
@@ -211,11 +212,12 @@ export const PlayerController = () => {
       delta
     );
 
-    camera.lookAt(cameraLookAtRef.current.getWorldPosition(new Vector3()));
+    camera.lookAt(kartRef.current.getWorldPosition(new Vector3()));
     camera.position.lerp(
       cameraGroupRef.current.getWorldPosition(new Vector3()),
-      8 * delta
+      24 * delta
     );
+    
 
     // const body = useGameStore.getState().body;
     // if(body){
@@ -255,6 +257,8 @@ export const PlayerController = () => {
         gamepadRef.current.buttons[7].pressed;
       gamepadButtons.x = gamepadRef.current.axes[0];
     }
+    const time = state.clock.getElapsedTime();
+
     updateSpeed(forward, backward, delta);
     rotatePlayer(left, right, player, joystick.x, delta);
     updatePlayer(player, speedRef.current, camera, kart, delta);
@@ -268,8 +272,9 @@ export const PlayerController = () => {
     <>
       <group></group>
       <group ref={playerRef}>
-        <group ref={cameraGroupRef} position={[0, 2, 5]}></group>
+        <group ref={cameraGroupRef} position={[0, 1, 5]}></group>
 
+{/* <OrbitControls/> */}
         <group ref={kartRef}>
           <VFXEmitter
             emitter="confettis"
@@ -305,14 +310,15 @@ export const PlayerController = () => {
             }}
           />
 
-          <Kart
+          {/* <Kart
             speed={speedRef}
             driftDirection={driftDirection}
             driftPower={driftPower}
             jumpOffset={jumpOffset}
             backWheelOffset={backWheelOffset}
             inputTurn={inputTurn}
-          />
+          /> */}
+          <Model speed={speedRef} driftDirection={driftDirection} driftPower={driftPower} jumpOffset={jumpOffset} backWheelOffset={backWheelOffset} inputTurn={inputTurn} />
 
           <group ref={cameraLookAtRef} position={[0, -2, -9]}></group>
         </group>
