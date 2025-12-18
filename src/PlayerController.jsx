@@ -1,7 +1,7 @@
 import { Kart } from "./models/Kart";
 import { useKeyboardControls, OrbitControls } from "@react-three/drei";
-import { useFrame } from "@react-three/fiber";
-import { useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useRef, useEffect } from "react";
 import { Vector3 } from "three";
 import { damp } from "three/src/math/MathUtils.js";
 import { kartSettings } from "./constants";
@@ -11,6 +11,7 @@ import { useTouchScreen } from "./hooks/useTouchScreen";
 import VFXEmitter from "./wawa-vfx/VFXEmitter";
 import { Model } from "./models/Witch";
 import { me } from "playroomkit";
+import { buildCollider, checkCollision, kartColliderSettings } from "./utils/KartCollision";
 
 export const PlayerController = () => {
   const rbRef = useRef(null);
@@ -41,6 +42,11 @@ export const PlayerController = () => {
   const speedRef = useRef(0);
   const rotationSpeedRef = useRef(0);
   const smoothedDirectionRef = useRef(new Vector3(0, 0, -1));
+  
+  // Collision stun system
+  const collisionStunTimer = useRef(0); // Remaining stun time
+  const COLLISION_STUN_DURATION = 1.5; // Seconds
+  const COLLISION_BOUNCE_SPEED = -15; // Negative = backwards
 
   const isTouchScreen = useTouchScreen();
 
@@ -48,6 +54,51 @@ export const PlayerController = () => {
   const setIsBoosting = useGameStore((state) => state.setIsBoosting);
   const setSpeed = useGameStore((state) => state.setSpeed);
   const setGamepad = useGameStore((state) => state.setGamepad);
+
+  // Collision system
+  const colliderRef = useRef(null);
+  const colliderBuilt = useRef(false);
+  const { scene } = useThree();
+
+  // Build collider from scene walls
+  useEffect(() => {
+    if (colliderBuilt.current) return;
+
+    // Wait a bit for scene to be ready, then build collider
+    const buildTimer = setTimeout(() => {
+      // Find wall/barrier meshes in scene (exclude ground meshes)
+      const wallMeshes = [];
+      scene.traverse((child) => {
+        if (child.isMesh) {
+          const name = child.name.toLowerCase();
+          // Include walls, barriers, fences - exclude ground
+          if (
+            name.includes("wall") ||
+            name.includes("barrier") ||
+            name.includes("fence") ||
+            name.includes("border") ||
+            name.includes("collision")
+          ) {
+            wallMeshes.push(child);
+          }
+        }
+      });
+
+      if (wallMeshes.length > 0) {
+        const collider = buildCollider({ traverse: (fn) => wallMeshes.forEach(fn) });
+        if (collider) {
+          colliderRef.current = collider;
+          scene.add(collider);
+          colliderBuilt.current = true;
+          console.log("Kart collision enabled with", wallMeshes.length, "wall meshes");
+        }
+      } else {
+        console.log("No wall meshes found for collision. Name meshes with 'wall', 'barrier', 'fence', 'border', or 'collision'");
+      }
+    }, 1000);
+
+    return () => clearTimeout(buildTimer);
+  }, [scene]);
 
   const getGamepad = () => {
     if (navigator.getGamepads) {
@@ -92,6 +143,16 @@ export const PlayerController = () => {
   };
 
   function updateSpeed(forward, backward, delta) {
+    // Tick down stun timer
+    if (collisionStunTimer.current > 0) {
+      collisionStunTimer.current -= delta;
+      // While stunned, gradually recover speed to 0 but block acceleration
+      speedRef.current = damp(speedRef.current, 0, 2, delta);
+      setSpeed(speedRef.current);
+      setIsBoosting(false);
+      return;
+    }
+
     const maxSpeed = kartSettings.speed.max + (turbo.current > 0 ? 40 : 0);
     maxSpeed > kartSettings.speed.max
       ? setIsBoosting(true)
@@ -227,8 +288,32 @@ export const PlayerController = () => {
     // }
     const direction = smoothedDirectionRef.current;
 
-    player.position.x += direction.x * speed * delta;
-    player.position.z += direction.z * speed * delta;
+    // Calculate desired new position
+    const desiredX = player.position.x + direction.x * speed * delta;
+    const desiredZ = player.position.z + direction.z * speed * delta;
+    const desiredPosition = new Vector3(desiredX, player.position.y, desiredZ);
+
+    // Check collision if collider exists
+    if (colliderRef.current) {
+      const result = checkCollision(
+        player.position,
+        desiredPosition,
+        colliderRef.current,
+        kartColliderSettings
+      );
+      player.position.x = result.position.x;
+      player.position.z = result.position.z;
+
+      // Bounce back and stun on collision
+      if (result.collided && collisionStunTimer.current <= 0) {
+        speedRef.current = COLLISION_BOUNCE_SPEED;
+        collisionStunTimer.current = COLLISION_STUN_DURATION;
+      }
+    } else {
+      // No collision system - move freely
+      player.position.x = desiredX;
+      player.position.z = desiredZ;
+    }
 
     setPlayerPosition(player.position);
   }
